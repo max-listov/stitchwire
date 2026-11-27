@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { parseJsonBytes } from 'stitchkit/files';
 import { readBoundedBody } from 'stitchkit/http';
 import { z } from 'zod';
@@ -44,17 +45,21 @@ export async function releasePackages(
   return packages;
 }
 
+type RegistryFetch = (url: string, options: RequestInit) => Promise<Response>;
+type ArchiveState = 'missing' | 'metadata-only' | 'verified';
+
 /** An anonymous read verifies the bytes a new user can actually install. */
-export async function registryHasArchive(
+async function readRegistryArchive(
   pkg: ReleasePackage,
-  get: (url: string, options: RequestInit) => Promise<Response> = fetch,
-): Promise<boolean> {
+  get: RegistryFetch,
+  signal: AbortSignal,
+): Promise<ArchiveState> {
   const id = `${pkg.name}@${pkg.version}`;
   // Bound both requests together so an unavailable registry cannot hold the release indefinitely.
-  const options = { redirect: 'error', signal: AbortSignal.timeout(45_000) } as const;
+  const options = { redirect: 'error', signal } as const;
   const limitError = () => new Error(`registry response exceeds its expected size for ${id}`);
   const response = await get(`${registry}/${encodeURIComponent(pkg.name)}/${pkg.version}`, options);
-  if (response.status === 404) return false;
+  if (response.status === 404) return 'missing';
   if (!response.ok) throw new Error(`cannot read ${id}: registry HTTP ${response.status}`);
   const meta = registryManifest.parse(
     parseJsonBytes(
@@ -71,6 +76,7 @@ export async function registryHasArchive(
   )
     throw new Error(`unexpected registry identity or tarball location for ${id}`);
   const archive = await get(url.href, options);
+  if (archive.status === 404) return 'metadata-only';
   if (!archive.ok) throw new Error(`cannot download ${id}: registry HTTP ${archive.status}`);
   const bytes = await readBoundedBody(archive.body, {
     maxBytes: pkg.bytes,
@@ -79,7 +85,44 @@ export async function registryHasArchive(
   });
   if (bytes.length !== pkg.bytes || sha256(bytes) !== pkg.digest)
     throw new Error(`${id} already exists with different bytes`);
-  return true;
+  return 'verified';
+}
+
+export async function registryHasArchive(pkg: ReleasePackage, get: RegistryFetch = fetch): Promise<boolean> {
+  const state = await readRegistryArchive(pkg, get, AbortSignal.timeout(45_000));
+  // A registered version with a missing tarball is already occupied. Never publish over it.
+  if (state === 'metadata-only')
+    throw new Error(`cannot download ${pkg.name}@${pkg.version}: registry HTTP 404`);
+  return state === 'verified';
+}
+
+/** The read replicas can lag a successful write by minutes. Wait for the user's exact bytes. */
+export async function waitForPublishedArchive(
+  pkg: ReleasePackage,
+  {
+    get = fetch,
+    signal = AbortSignal.timeout(6 * 60_000),
+    pause = (s) => delay(5_000, undefined, { signal: s }),
+  }: {
+    get?: RegistryFetch;
+    signal?: AbortSignal;
+    pause?: (signal: AbortSignal) => Promise<void>;
+  } = {},
+): Promise<void> {
+  try {
+    for (;;) {
+      signal.throwIfAborted();
+      const attempt = AbortSignal.any([signal, AbortSignal.timeout(45_000)]);
+      if ((await readRegistryArchive(pkg, get, attempt)) === 'verified') return;
+      await pause(signal);
+    }
+  } catch (cause) {
+    if (!signal.aborted) throw cause;
+    throw new Error(
+      `npm has not served the published ${pkg.name}@${pkg.version} before the visibility deadline`,
+      { cause },
+    );
+  }
 }
 
 export async function publishPackages(packages: ReleasePackage[], verifyOnly: boolean): Promise<void> {
@@ -107,14 +150,11 @@ export async function publishPackages(packages: ReleasePackage[], verifyOnly: bo
       throw new Error(
         `npm publish ${pkg.name}@${pkg.version} exited ${result.exitCode}: ${saidLast(result.stderr)}`,
       );
-    // The write and its anonymous read can hit different registry replicas.
-    let visible = false;
-    for (let attempt = 0; attempt < 10 && !visible; attempt++) {
-      if (attempt > 0) await Bun.sleep(2000);
-      visible = await registryHasArchive(pkg);
-    }
-    if (!visible) throw new Error(`npm has not served the published ${pkg.name}@${pkg.version}`);
   }
+  // Both writes precede the read barrier so replication of one package cannot delay its sibling.
+  await Promise.all(
+    packages.filter((_, index) => !present[index]).map((pkg) => waitForPublishedArchive(pkg)),
+  );
 }
 
 if (import.meta.main) {
