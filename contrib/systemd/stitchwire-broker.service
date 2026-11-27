@@ -1,0 +1,31 @@
+# The router. It binds loopback only — TLS and the public name belong to the reverse proxy in
+# front of it, so this unit never needs a certificate or a privileged port.
+# This is a user unit: %h is the installing user's home; it never requests root. Its shape is the
+# agent's, rendered by packages/runtime/src/enrollment/unit.ts.
+# Install Bun in ~/.bun and the runtime in ~/.local/bin before enabling.
+# Create ~/.config/systemd/user and ~/.local/state/stitchwire first.
+#
+#   install -m 644 stitchwire-broker.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now stitchwire-broker
+
+[Unit]
+Description=Stitchwire broker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart="%h/.bun/bin/bun" "%h/.local/bin/stitchwire" "broker" "--config" "%h/.config/stitchwire/broker.json"
+Environment="STITCHWIRE_CONFIG_DIR=%h/.config/stitchwire" "STITCHWIRE_STATE_DIR=%h/.local/state/stitchwire"
+Restart=always
+# A broker that flaps must not hammer the machine, but it must come back on its own: a node cannot
+# reach anything while the router is down, and nobody is watching at 04:00.
+RestartSec=2
+# The config holds token DIGESTS, never tokens — but the audit log records who called whom.
+UMask=0077
+NoNewPrivileges=true
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

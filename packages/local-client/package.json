@@ -1,0 +1,9 @@
+{
+  "name": "@stitchwire/local-client",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "stitchkit": "0.132.0",
+    "zod": "^4.6.7"
+  }
+}

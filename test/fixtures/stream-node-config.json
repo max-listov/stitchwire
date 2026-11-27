@@ -1,0 +1,16 @@
+{
+  "url": "https://wire.example.test",
+  "nodeId": "producer",
+  "token": "pppppppppppppppppppppppppppppppppppppppp",
+  "allow": {},
+  "streams": {
+    "events": {
+      "bin": "/usr/bin/printf",
+      "argv": ["{\"data\":\"ready\",\"cursor\":\"1\"}\\n"],
+      "format": { "mode": "ndjson", "stableCursor": true },
+      "maxBytes": 1048576,
+      "concurrency": 1
+    }
+  },
+  "events": { "publish": ["generic.events"], "subscribe": [] }
+}

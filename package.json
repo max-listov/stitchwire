@@ -1,0 +1,85 @@
+{
+  "name": "stitchwire",
+  "version": "0.58.0",
+  "description": "Broker-mediated typed RPC, bounded streams and volatile events between machines that cannot reach each other directly.",
+  "license": "MIT",
+  "author": "Max Listov",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/max-listov/stitchwire.git"
+  },
+  "homepage": "https://github.com/max-listov/stitchwire#readme",
+  "bugs": {
+    "url": "https://github.com/max-listov/stitchwire/issues"
+  },
+  "keywords": [
+    "stitchwire",
+    "bun",
+    "node",
+    "rpc",
+    "streams",
+    "events",
+    "nat",
+    "broker",
+    "unix-socket",
+    "typescript",
+    "zod"
+  ],
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "bin": {
+    "stitchwire": "./dist/stitchwire"
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "check": "bun run typecheck && bun run lint && bun run test",
+    "lint": "bun x --no-install biome lint packages scripts examples test && bun x --no-install biome format packages scripts examples test",
+    "format": "bun x --no-install biome format --write packages scripts examples test",
+    "verify": "bun run check && bun run build && bun run check:runtime && bun run check:enrollment && bun run check:client-package && bun scripts/dependency-inventory.ts && bun run check:runtime-package && bun scripts/publication-guard.ts && bun run audit:content",
+    "audit:content": "bun scripts/content-audit.ts --secrets",
+    "pack:runtime": "bun scripts/pack-runtime-package.ts",
+    "check:runtime-package": "bun scripts/check-runtime-package.ts",
+    "check:runtime": "bun scripts/check-runtime.ts",
+    "check:enrollment": "bun scripts/check-enrollment.ts --artifact dist/stitchwire",
+    "smoke": "bun scripts/release-smoke.ts",
+    "publish:release": "bun scripts/publish-release.ts",
+    "observe:publication": "bun scripts/observe-publication.ts",
+    "benchmark:client": "bun scripts/benchmark-client.ts",
+    "benchmark:lane": "bun scripts/benchmark-lane.ts",
+    "benchmark:events": "bun scripts/benchmark-event-path.ts",
+    "benchmark:background": "bun scripts/benchmark-background.ts",
+    "benchmark:service-path": "bun scripts/benchmark-service-path.ts",
+    "benchmark:service-audit": "bun scripts/benchmark-service-audit.ts",
+    "benchmark:utf8-length": "bun scripts/benchmark-utf8-length.ts",
+    "profile:background": "bun scripts/profile-background.ts",
+    "soak:memory": "bun scripts/soak-memory.ts",
+    "memory:compare": "bun scripts/memory/compare.ts",
+    "verify:clean": "bun scripts/check-clean-build.ts",
+    "check:client": "tsc --project packages/client/tsconfig.json --noEmit",
+    "build:client": "bun scripts/build-client.ts",
+    "example:service": "bun examples/service/run.ts",
+    "example:stream": "bun examples/stream/run.ts",
+    "example:events": "bun examples/events/run.ts",
+    "check:client-package": "bun scripts/check-client-package.ts",
+    "typecheck": "tsc --noEmit && bun run check:client && bun run --cwd packages/contracts check && bun run --cwd packages/runtime check",
+    "test": "bun test --timeout 30000",
+    "dev:broker": "bun run packages/runtime/src/cli/main.ts broker",
+    "dev:agent": "bun run packages/runtime/src/cli/main.ts agent"
+  },
+  "dependencies": {
+    "@socket.io/bun-engine": "^0.1.2",
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4",
+    "stitchkit": "0.132.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.9",
+    "@types/bun": "^1.4.5",
+    "@types/node": "^26.6.11",
+    "typescript": "^7.0.2"
+  }
+}

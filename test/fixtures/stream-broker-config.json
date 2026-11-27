@@ -1,0 +1,24 @@
+{
+  "nodes": [
+    {
+      "id": "producer",
+      "tokenSha256s": ["51dd12fa6e0ae1acbdcb28ec5150f196af5a8a5c43b33b535f2da6636aa21555"]
+    },
+    {
+      "id": "subscriber",
+      "tokenSha256s": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+    }
+  ],
+  "capabilities": {
+    "producer": [{ "operation": "publish", "targets": ["producer"] }],
+    "subscriber": [{ "operation": "subscribe", "targets": ["producer"] }]
+  },
+  "topics": {
+    "generic.events": {
+      "producer": "producer",
+      "subscribers": ["subscriber"],
+      "delivery": "ordered",
+      "maxSubscribers": 1
+    }
+  }
+}

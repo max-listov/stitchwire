@@ -1,0 +1,66 @@
+{
+  "name": "@stitchwire/client",
+  "version": "0.31.0",
+  "description": "Bounded typed client for the Stitchwire local Unix door; no daemon or broker credentials.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "Max Listov",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/max-listov/stitchwire.git",
+    "directory": "packages/client"
+  },
+  "homepage": "https://github.com/max-listov/stitchwire/tree/main/packages/client#readme",
+  "bugs": {
+    "url": "https://github.com/max-listov/stitchwire/issues"
+  },
+  "keywords": [
+    "stitchwire",
+    "client",
+    "sdk",
+    "rpc",
+    "streams",
+    "events",
+    "unix-socket",
+    "typescript",
+    "bun",
+    "node"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./contracts": {
+      "types": "./dist/contracts.d.ts",
+      "import": "./dist/contracts.js"
+    },
+    "./enrollment": {
+      "types": "./dist/enrollment.d.ts",
+      "import": "./dist/enrollment.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.3.0",
+    "bun": ">=1.4.4"
+  },
+  "peerDependencies": {
+    "stitchkit": ">=0.127.0 <1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "stitchkit": "0.132.0",
+    "zod": "^4.6.7"
+  },
+  "scripts": {
+    "build": "bun ../../scripts/build-client.ts",
+    "check": "tsc --project tsconfig.json --noEmit"
+  }
+}

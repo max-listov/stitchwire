@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "presentation": {
+    "version": 1,
+    "icon": "heroicons:bolt",
+    "asset": "docs/assets/stitchwire-mark.jpg"
+  },
+  "identity": {
+    "repositoryId": "max-listov/stitchwire",
+    "policy": "public-source"
+  },
+  "layout": {
+    "backlogRoots": [],
+    "surfaces": [
+      { "path": ".github", "classification": "deliverable" },
+      { "path": ".gitignore", "classification": "deliverable" },
+      { "path": ".passport.json", "classification": "deliverable" },
+      { "path": "AGENTS.md", "classification": "deliverable" },
+      { "path": "CHANGELOG.md", "classification": "deliverable" },
+      { "path": "CONTRIBUTING.md", "classification": "deliverable" },
+      { "path": "LICENSE", "classification": "deliverable" },
+      { "path": "README.md", "classification": "deliverable" },
+      { "path": "SECURITY.md", "classification": "deliverable" },
+      { "path": "biome.json", "classification": "deliverable" },
+      { "path": "bun.lock", "classification": "deliverable" },
+      { "path": "contrib", "classification": "deliverable" },
+      { "path": "dist", "classification": "deliverable" },
+      { "path": "docs", "classification": "deliverable" },
+      { "path": "examples", "classification": "deliverable" },
+      { "path": "package.json", "classification": "deliverable" },
+      { "path": "packages", "classification": "deliverable" },
+      { "path": "scripts", "classification": "deliverable" },
+      { "path": "test", "classification": "deliverable" },
+      { "path": "tsconfig.json", "classification": "deliverable" }
+    ]
+  }
+}

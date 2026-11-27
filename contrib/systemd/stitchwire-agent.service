@@ -1,0 +1,31 @@
+# The node half: dials out to the broker, keeps that connection, and serves the local Unix socket.
+# Nothing listens on a network port here — that is the entire security posture of a node.
+# This is a user unit: %h is the installing user's home; it never requests root. `stitchwire enroll`
+# installs this same shape with absolute paths, rendered by packages/runtime/src/enrollment/unit.ts.
+# Install Bun in ~/.bun and the runtime in ~/.local/bin before enabling.
+# Create ~/.config/systemd/user and ~/.local/state/stitchwire first.
+#
+#   install -m 644 stitchwire-agent.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now stitchwire-agent
+
+[Unit]
+Description=Stitchwire agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart="%h/.bun/bin/bun" "%h/.local/bin/stitchwire" "agent" "--config" "%h/.config/stitchwire/node.json"
+Environment="STITCHWIRE_CONFIG_DIR=%h/.config/stitchwire" "STITCHWIRE_STATE_DIR=%h/.local/state/stitchwire"
+Restart=always
+RestartSec=2
+# node.json holds this node's token in clear: the file is mode 600 and the process must not widen it.
+UMask=0077
+# Deliberately NOT ProtectSystem=strict: this agent's whole job is running the binaries its own
+# allowlist names, and those live wherever the operator installed them.
+NoNewPrivileges=true
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

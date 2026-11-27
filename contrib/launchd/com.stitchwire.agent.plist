@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The node half on macOS — the laptop case this project exists for: no address, no open port, and
+  a network that changes several times a day.
+
+    bun scripts/macos-bundle.ts
+    mkdir -p ~/Library/LaunchAgents ~/.local/state/stitchwire
+    cp com.stitchwire.agent.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.stitchwire.agent.plist
+
+  Replace USERNAME below; launchd does not expand ~ inside these strings.
+  Run through the signed Stitchwire.app launcher so macOS attributes local-network access
+  to Stitchwire rather than a bare interpreter binary. Install Bun in ~/.bun and the
+  runtime in ~/.local/bin so launch stays independent of launchd's minimal PATH.
+
+  Without a Developer ID Application identity there is no bundle to build: skip the first step and
+  delete the stitchwire-launcher line from ProgramArguments, so launchd runs Bun directly (macOS then
+  attributes the agent's network access to Bun). Leaving that line in makes launchd retry a missing
+  program every ThrottleInterval.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stitchwire.agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/USERNAME/Applications/Stitchwire.app/Contents/MacOS/stitchwire-launcher</string>
+    <string>/Users/USERNAME/.bun/bin/bun</string>
+    <string>/Users/USERNAME/.local/bin/stitchwire</string>
+    <string>agent</string>
+    <string>--config</string>
+    <string>/Users/USERNAME/.config/stitchwire/node.json</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- Comes back on its own after a crash, a logout or a lid that stayed closed all weekend. -->
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <!-- node.json is mode 600; a wider umask here would undo that on every file the agent writes. -->
+  <key>Umask</key>
+  <integer>63</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/USERNAME/.local/state/stitchwire/agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/USERNAME/.local/state/stitchwire/agent.log</string>
+</dict>
+</plist>
