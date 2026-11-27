@@ -4,7 +4,7 @@ description: Package identity, exact door contract and artifact installation wit
 type: architecture
 status: active
 created: 2026-08-30
-updated: 2026-11-27 14:13 +08:00
+updated: 2026-11-27 16:16 +08:00
 ---
 
 ## Release inputs
@@ -35,10 +35,11 @@ their declared types. No broker/agent internals or domain SDKs are exported.
 
 1. Install the SDK from npm (`bun add @stitchwire/client` or
    `npm install @stitchwire/client`) or obtain the versioned `stitchwire-client-<sdk-version>.tgz` and
-   `SHA256SUMS` from GitHub Releases.
+   the signed checksum list (`SHA256SUMS` and `SHA256SUMS.sig`) from GitHub Releases.
 2. When installing from a release tarball, verify the archive SHA-256 against `SHA256SUMS` (`shasum -a 256`
-   on macOS, `sha256sum` on Linux) before adding it. A checksum fetched from the same release proves
-   integrity, not authenticity: compare it with a value received through a channel you trust.
+   on macOS, `sha256sum` on Linux) after authenticating the checksum list with the Ed25519 public key
+   in the standalone installer. npm installations can verify registry signatures and provenance with
+   `npm audit signatures` in the installed project.
 3. The SDK declares Stitchkit and Zod as peer dependencies: the consumer owns those versions and needs
    no override to keep a single copy of each (the SDK hands its schemas to Stitchkit, which needs them
    from the consumer's one Zod). A consumer without its own Stitchkit or Zod gets the newest one in the

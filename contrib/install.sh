@@ -5,12 +5,11 @@
 # Installs the standalone `stitchwire` runtime into $STITCHWIRE_PREFIX/bin/stitchwire
 # (default ~/.local/bin/stitchwire) and, on macOS, places its native lock-identity sidecar at
 # $STITCHWIRE_PREFIX/native/darwin-<arch>.node. Re-running on an up-to-date machine fetches only
-# manifest.json and SHA256SUMS and changes no files.
+# the signed checksum list and manifest and changes no files.
 #
-# Integrity, not authenticity: every file is checked against the release's SHA256SUMS, which comes
-# from the same origin as the files. That catches a corrupted or truncated download; it cannot
-# detect a release, or a STITCHWIRE_RELEASE_BASE / STITCHWIRE_REPO override, that someone else
-# controls. Every file is downloaded and checked, and the new runtime answers `--version` from a
+# The release signer authenticates SHA256SUMS with Ed25519. Its public key ships in this installer,
+# independently of the asset mirror. The checksum list covers manifest.json and every executable.
+# Every file is downloaded and checked, and the new runtime answers `--version` from a
 # staged copy, before any installed file is replaced. Downloads are https only; a plain http:// base
 # is accepted for this machine alone (127.0.0.0/8, ::1, localhost), and no redirect leaves https.
 # The candidate file name is not taken from the manifest: it is stitchwire-<version>, and the manifest
@@ -26,6 +25,7 @@
 #   STITCHWIRE_PREFIX        Installation prefix (default: $HOME/.local)
 #   STITCHWIRE_BUN           Explicit path to bun executable (default: `bun` on PATH, then ~/.bun/bin/bun)
 set -euo pipefail
+RELEASE_PUBLIC_KEY='0MFAOg326fFnUfZakiWAzOjZaTZn4iqby-r2mntzB2c'
 
 say() { printf 'stitchwire-install: %s\n' "$1"; }
 die() { printf 'stitchwire-install: error: %s\n' "$1" >&2; exit 1; }
@@ -174,6 +174,22 @@ main() {
   say "fetching release manifest from ${base}…"
   fetch "${base}/manifest.json" "${TMP}/manifest.json" || die "cannot fetch ${base}/manifest.json"
   fetch "${base}/SHA256SUMS" "${TMP}/SHA256SUMS" || die "cannot fetch ${base}/SHA256SUMS"
+
+  # The first public release predates signatures. Only an explicit pin to its exact published
+  # checksum list can select it; unsigned bytes from a mirror never become a new latest release.
+  if [[ "${STITCHWIRE_VERSION:-}" =~ ^v?0\.58\.0$ ]] && [ "$(sha_of "${TMP}/SHA256SUMS")" = '6a421ba23c4c3dff000f0a91dec7cda5fa0a348eba78d2f1528d2c0b45b69a7c' ]; then
+    say 'verified pinned 0.58.0 checksum list'
+  else
+    fetch "${base}/SHA256SUMS.sig" "${TMP}/SHA256SUMS.sig" || die 'cannot fetch release checksum signature'
+    "$bun" --no-install -e '
+      const {createPublicKey, verify} = require("node:crypto");
+      const {readFileSync} = require("node:fs");
+      const [x, sums, sig] = process.argv.slice(1);
+      const key = createPublicKey({format:"jwk", key:{kty:"OKP", crv:"Ed25519", x}});
+      const signature = readFileSync(sig);
+      process.exit(signature.length === 64 && verify(null, readFileSync(sums), key, signature) ? 0 : 1);
+    ' "$RELEASE_PUBLIC_KEY" "${TMP}/SHA256SUMS" "${TMP}/SHA256SUMS.sig" || die 'invalid release checksum signature'
+  fi
 
   # Check manifest.json itself against SHA256SUMS before trusting its fields.
   local want_manifest got_manifest

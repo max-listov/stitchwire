@@ -19,6 +19,8 @@ import { z } from 'zod';
 import clientManifest from '../packages/client/package.json' with { type: 'json' };
 import { LOCAL_API_VERSION } from '../packages/contracts/src/door/common.ts';
 import { sha256 } from '../packages/runtime/src/config/io.ts';
+import { readSigningKey } from '../packages/runtime/src/fleet/signature.ts';
+import { SIGNATURE_FILE, signChecksums } from './release-signature.ts';
 import { RELEASE_VERSION } from '../packages/runtime/src/release-version.ts';
 import { assertArtifactPrivacy } from './artifact-privacy.ts';
 import {
@@ -88,9 +90,10 @@ export type CandidateInputs = {
   target: string;
   /** The version the source declares; the built runtime must report it. */
   expectedVersion: string;
+  signingKey: string;
 };
 
-export async function createCandidate(inputs: CandidateInputs) {
+export async function createCandidate(inputs: CandidateInputs, publicKey?: string) {
   if (!existsSync(inputs.candidate)) throw new Error('candidate binary is missing; run bun run build first');
   if (!existsSync(inputs.client.path))
     throw new Error('client archive is missing; run bun run check:client-package first');
@@ -159,15 +162,22 @@ export async function createCandidate(inputs: CandidateInputs) {
         localDoor: inputs.client.localDoor,
       },
       files: releaseFiles,
+      signed: true,
     });
     const releaseDigest = await writeSeal(releaseDir, manifestText(release), release.files);
+    const signaturePath = join(releaseDir, SIGNATURE_FILE);
+    await Bun.write(
+      signaturePath,
+      signChecksums(await Bun.file(join(releaseDir, 'SHA256SUMS')).bytes(), inputs.signingKey),
+    );
+    chmodSync(signaturePath, 0o444);
     const rollback = rollbackManifest({
       rollback: { version: rollbackVersion, file: rollbackName },
       candidate: { version: candidateVersion, manifestSha256: releaseDigest },
       files: rollbackFiles,
     });
     const rollbackDigest = await writeSeal(rollbackDir, manifestText(rollback), rollback.files);
-    verifyCandidate(staging);
+    verifyCandidate(staging, publicKey);
     chmodSync(releaseDir, 0o555);
     chmodSync(rollbackDir, 0o555);
     chmodSync(staging, 0o555);
@@ -198,9 +208,10 @@ if (import.meta.main) {
     return value === undefined || value.startsWith('--') ? undefined : value;
   };
   const baseline = argument('--baseline');
-  if (baseline === undefined)
+  const signingKey = argument('--signing-key');
+  if (baseline === undefined || signingKey === undefined)
     throw new Error(
-      'usage: bun scripts/create-candidate.ts --baseline <approved-prior-artifact> [--out <dir>]',
+      'usage: bun scripts/create-candidate.ts --baseline <approved-prior-artifact> --signing-key <private-key-file> [--out <dir>]',
     );
   const root = resolve(import.meta.dir, '..');
   const clientName = `stitchwire-client-${VersionSchema.parse(clientManifest.version)}.tgz`;
@@ -217,6 +228,7 @@ if (import.meta.main) {
     notice: (entry) => (entry.role === 'license' ? join(root, entry.file) : join(root, 'dist', entry.file)),
     target: resolve(argument('--out') ?? join(root, 'dist', 'candidates', `v${RELEASE_VERSION}`)),
     expectedVersion: RELEASE_VERSION,
+    signingKey: readSigningKey(signingKey),
   });
   console.log(JSON.stringify(result));
 }

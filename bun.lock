@@ -20,7 +20,7 @@
     },
     "packages/client": {
       "name": "@stitchwire/client",
-      "version": "0.31.0",
+      "version": "0.31.1",
       "devDependencies": {
         "stitchkit": "0.132.0",
         "zod": "^4.6.7",

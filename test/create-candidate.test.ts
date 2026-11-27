@@ -1,3 +1,4 @@
+import { generateSigningKey } from '../packages/runtime/src/fleet/signature.ts';
 import { expect, test } from 'bun:test';
 import {
   chmodSync,
@@ -35,28 +36,33 @@ function stand() {
   for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.txt', 'dependency-inventory.json'])
     writeFileSync(join(inputs, name), `${name} text`);
   const target = join(work, 'candidates', 'v1.2.3');
+  const signer = generateSigningKey();
   const create = () =>
-    createCandidate({
-      candidate: join(inputs, 'stitchwire'),
-      runtimePackage: join(inputs, 'stitchwire-1.2.3.tgz'),
-      baseline: join(inputs, 'stitchwire-1.2.2'),
-      client: {
-        path: join(inputs, 'stitchwire-client-1.2.3.tgz'),
-        package: '@stitchwire/client',
-        version: '1.2.3',
-        localDoor: 7,
+    createCandidate(
+      {
+        candidate: join(inputs, 'stitchwire'),
+        runtimePackage: join(inputs, 'stitchwire-1.2.3.tgz'),
+        baseline: join(inputs, 'stitchwire-1.2.2'),
+        client: {
+          path: join(inputs, 'stitchwire-client-1.2.3.tgz'),
+          package: '@stitchwire/client',
+          version: '1.2.3',
+          localDoor: 7,
+        },
+        notice: (entry) => join(inputs, entry.file),
+        target,
+        expectedVersion: '1.2.3',
+        signingKey: signer.privateKeyPem,
       },
-      notice: (entry) => join(inputs, entry.file),
-      target,
-      expectedVersion: '1.2.3',
-    });
+      signer.publicKey,
+    );
   const cleanup = () => {
     // The packet is sealed read-only; a test owns it and opens it again to remove it.
     for (const directory of [target, ...Object.values(CANDIDATE_LAYOUT).map((set) => join(target, set))])
       if (existsSync(directory)) chmodSync(directory, 0o755);
     rmSync(work, { recursive: true, force: true });
   };
-  return { inputs, target, create, cleanup };
+  return { inputs, target, create, cleanup, signer };
 }
 
 test('a candidate seals the release set and the rollback packet apart, and publishes only the release set', async () => {
@@ -64,7 +70,7 @@ test('a candidate seals the release set and the rollback packet apart, and publi
   try {
     const result = await s.create();
     expect(readdirSync(s.target).sort()).toEqual(['release', 'rollback']);
-    const packet = verifyCandidate(s.target);
+    const packet = verifyCandidate(s.target, s.signer.publicKey);
     expect(result).toMatchObject({
       candidateVersion: '1.2.3',
       rollbackVersion: '1.2.2',
@@ -85,6 +91,7 @@ test('a candidate seals the release set and the rollback packet apart, and publi
       [
         'LICENSE',
         'SHA256SUMS',
+        'SHA256SUMS.sig',
         'THIRD_PARTY_NOTICES.txt',
         'dependency-inventory.json',
         'manifest.json',
@@ -113,7 +120,7 @@ test('a candidate seals the release set and the rollback packet apart, and publi
 
     // Immutable output: a second run refuses and leaves the sealed packet as it was.
     await expect(s.create()).rejects.toThrow('immutable output is never overwritten');
-    expect(verifyCandidate(s.target).release.digest).toBe(packet.release.digest);
+    expect(verifyCandidate(s.target, s.signer.publicKey).release.digest).toBe(packet.release.digest);
     expect(readdirSync(join(s.target, '..'))).toEqual(['v1.2.3']);
   } finally {
     s.cleanup();

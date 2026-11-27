@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { parseJsonBytes } from 'stitchkit/files';
 import { z } from 'zod';
 import { sha256 } from '../packages/runtime/src/config/io.ts';
+import { assertSignedChecksums, SIGNATURE_FILE } from './release-signature.ts';
 import { DARWIN_ARCHITECTURES, nativeSidecar } from './runtime-assets.ts';
 
 const Name = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/);
@@ -55,7 +56,7 @@ const RollbackFileSchema = z.strictObject({
 });
 
 export const CandidateManifestSchema = z.strictObject({
-  schema: z.union([z.literal(2), z.literal(3)]),
+  schema: z.union([z.literal(2), z.literal(3), z.literal(4)]),
   candidate: z.strictObject({ version: Version, file: Name }),
   client: z.strictObject({
     package: z.literal('@stitchwire/client'),
@@ -91,9 +92,10 @@ export function releaseManifest(input: {
   /** As the client package declares it; the schema refuses another package name. */
   client: { package: string; version: string; file: string; localDoor: number };
   files: CandidateFile[];
+  signed?: boolean;
 }): CandidateManifest {
   return CandidateManifestSchema.parse({
-    schema: 3,
+    schema: input.signed ? 4 : 3,
     // No protocol field. A release is fleet-wide by definition, so "which protocol does this
     // artifact speak" has exactly one answer — its own version.
     candidate: input.candidate,
@@ -163,11 +165,14 @@ function verifySet<
   parse: (value: unknown) => Manifest,
   roleOf: (manifest: Manifest, file: string) => string | undefined,
   required: (manifest: Manifest) => ReadonlyArray<{ role: string; file: string }>,
+  authenticate?: (manifest: Manifest, sums: Buffer) => string[],
 ): SealedSet<Manifest> {
   const manifestBytes = regularBytes(directory, 'manifest.json', 1024 * 1024);
   const manifest = parse(parseJsonBytes(manifestBytes));
   const listed = new Map<string, string>();
-  const sums = regularBytes(directory, 'SHA256SUMS', 16 * 1024).toString();
+  const checksumBytes = regularBytes(directory, 'SHA256SUMS', 16 * 1024);
+  const proofs = authenticate?.(manifest, checksumBytes) ?? [];
+  const sums = checksumBytes.toString();
   if (!sums.endsWith('\n')) throw new Error('truncated candidate SHA256SUMS');
   for (const line of sums.trimEnd().split('\n')) {
     const match = /^([a-f0-9]{64}) {2}([a-zA-Z0-9][a-zA-Z0-9._-]*)$/.exec(line);
@@ -197,7 +202,7 @@ function verifySet<
   if (listed.get('manifest.json') !== digest || listed.size !== names.size + 1)
     throw new Error('candidate manifest/checksum inventory differs');
   const actual = readdirSync(directory).sort(),
-    expected = [...names, 'manifest.json', 'SHA256SUMS'].sort();
+    expected = [...names, 'manifest.json', 'SHA256SUMS', ...proofs].sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected))
     throw new Error('candidate directory inventory differs');
   return { directory, manifest, digest, listed };
@@ -208,7 +213,7 @@ function releaseRequired(manifest: CandidateManifest): Array<{ role: string; fil
     { role: 'candidate', file: manifest.candidate.file },
     { role: 'client', file: manifest.client.file },
     // A schema 2 receipt predates the npm runtime archive and still verifies its original release.
-    ...(manifest.schema === 3
+    ...(manifest.schema >= 3
       ? [{ role: 'runtime-package', file: `stitchwire-${manifest.candidate.version}.tgz` }]
       : []),
     ...CANDIDATE_NOTICES,
@@ -220,12 +225,17 @@ function releaseRequired(manifest: CandidateManifest): Array<{ role: string; fil
 }
 
 /** The public half alone: the files a release carries. A rollback file here is unexpected by construction. */
-export function verifyReleaseSet(directory: string): SealedSet<CandidateManifest> {
+export function verifyReleaseSet(directory: string, publicKey?: string): SealedSet<CandidateManifest> {
   return verifySet(
     directory,
     (value) => CandidateManifestSchema.parse(value),
     (manifest, file) => releaseRequired(manifest).find((entry) => entry.file === file)?.role,
     releaseRequired,
+    (manifest, sums) => {
+      if (manifest.schema !== 4) return [];
+      assertSignedChecksums(sums, regularBytes(directory, SIGNATURE_FILE, 64), publicKey);
+      return [SIGNATURE_FILE];
+    },
   );
 }
 
@@ -250,14 +260,14 @@ export type CandidatePacket = {
 };
 
 /** One certified packet contract shared by publication, SDK acceptance, certification and smoke receipts. */
-export function verifyCandidate(root: string): CandidatePacket {
+export function verifyCandidate(root: string, publicKey?: string): CandidatePacket {
   const entries = readdirSync(root).sort();
   const layout = Object.values(CANDIDATE_LAYOUT).sort();
   if (JSON.stringify(entries) !== JSON.stringify(layout))
     throw new Error(`candidate directory holds ${entries.join(', ')}, not ${layout.join(', ')}`);
   for (const entry of layout)
     if (!lstatSync(join(root, entry)).isDirectory()) throw new Error(`candidate ${entry} is not a directory`);
-  const release = verifyReleaseSet(join(root, CANDIDATE_LAYOUT.release));
+  const release = verifyReleaseSet(join(root, CANDIDATE_LAYOUT.release), publicKey);
   const rollback = verifyRollbackSet(join(root, CANDIDATE_LAYOUT.rollback));
   if (
     rollback.manifest.candidate.version !== release.manifest.candidate.version ||
@@ -272,5 +282,8 @@ export function verifyCandidate(root: string): CandidatePacket {
 
 /** What a release uploads: the release set's listed files and its `SHA256SUMS`, never the rollback packet. */
 export function publishedAssets(packet: CandidatePacket): string[] {
-  return [...packet.release.listed.keys(), 'SHA256SUMS'].map((name) => join(packet.release.directory, name));
+  const { directory, listed, manifest } = packet.release;
+  const names = [...listed.keys(), 'SHA256SUMS'];
+  if (manifest.schema === 4) names.push(SIGNATURE_FILE);
+  return names.map((name) => join(directory, name));
 }

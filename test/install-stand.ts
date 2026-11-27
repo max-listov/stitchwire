@@ -9,10 +9,13 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { generateSigningKey } from '../packages/runtime/src/fleet/signature.ts';
+import { releasePublicKey, signChecksums } from '../scripts/release-signature.ts';
 import { sha256 } from '../packages/runtime/src/config/io.ts';
 import { releaseSetFiles } from './candidate-fixture.ts';
 
 const INSTALL_SCRIPT = resolve(import.meta.dir, '..', 'contrib/install.sh');
+const signer = generateSigningKey();
 export const isDarwin = process.platform === 'darwin';
 
 export type Tamper = 'binary' | 'sidecar' | 'manifest' | null;
@@ -36,6 +39,9 @@ export function release(version: string, tamper: Tamper = null, reports = versio
   );
   const files: Record<string, Buffer> = {};
   for (const [name, bytes] of set) files[`/${name}`] = bytes;
+  const sums = files['/SHA256SUMS'];
+  if (!sums) throw new Error('the fixture lacks SHA256SUMS');
+  files['/SHA256SUMS.sig'] = signChecksums(sums, signer.privateKeyPem);
   const tampered = (name: string, change: (text: string) => string) => {
     files[`/${name}`] = Buffer.from(change(String(files[`/${name}`])));
   };
@@ -69,12 +75,18 @@ export function resealed(
   }
   sums.push(`${sha256(manifest)}  manifest.json`, '');
   files['/SHA256SUMS'] = Buffer.from(sums.join('\n'));
+  files['/SHA256SUMS.sig'] = signChecksums(files['/SHA256SUMS'], signer.privateKeyPem);
   return { ...base, files };
 }
 
 /** A scratch home and a loopback http server that publishes `published`, recording each request path. */
 export function installStand() {
   const work = mkdtempSync(join(tmpdir(), 'stitchwire-install-sh-'));
+  const installer = join(work, 'install.sh');
+  writeFileSync(
+    installer,
+    readFileSync(INSTALL_SCRIPT, 'utf8').replace(releasePublicKey(), signer.publicKey),
+  );
   const requests: string[] = [];
   let published = release('0.99.1');
   const server = Bun.serve({
@@ -100,7 +112,7 @@ export function installStand() {
     /** The macOS user's `curl … | bash` runs the system bash, so the script runs under /bin/bash. */
     async run(prefix: string, env: Record<string, string> = {}) {
       requests.length = 0;
-      const child = Bun.spawn(['/bin/bash', INSTALL_SCRIPT], {
+      const child = Bun.spawn(['/bin/bash', installer], {
         env: {
           PATH: process.env.PATH ?? '/usr/bin:/bin',
           HOME: work,

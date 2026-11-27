@@ -20,6 +20,8 @@ import { basename, join, resolve } from 'node:path';
 import { sha256 } from '../packages/runtime/src/config/io.ts';
 import { runBounded } from './bounded-command.ts';
 import { publishedAssets, verifyCandidate } from './candidate-manifest.ts';
+import { SIGNATURE_FILE } from './release-signature.ts';
+import { certifyNpmPublication } from './workflow-publication.ts';
 import { publishPackages, registryHasArchive, releasePackages } from './npm-release.ts';
 import { assertPublishedSdkIdentity, publishedReleases } from './published-sdk.ts';
 
@@ -224,7 +226,10 @@ async function fetchPublishedDigest(
 const assets = publishedAssets(packet);
 const expected = new Map(listed);
 expected.set('SHA256SUMS', sha256(await Bun.file(sumsPath).bytes()));
-const packages = manifest.schema === 3 ? await releasePackages(packet.release) : [];
+if (manifest.schema === 4)
+  expected.set(SIGNATURE_FILE, sha256(await Bun.file(join(dir, SIGNATURE_FILE)).bytes()));
+if (!verifyOnly && manifest.schema !== 4) throw new Error('a new release needs a signed checksum manifest');
+const packages = manifest.schema >= 3 ? await releasePackages(packet.release) : [];
 if (!verifyOnly && packages.length !== 2) throw new Error('a new release must seal both npm packages');
 const existing = catalog.find((release) => release.tag_name === tag);
 
@@ -261,7 +266,21 @@ if (dryRun) {
   } else if (missing.length) {
     throw new Error(`published assets missing: ${missing.map((path) => basename(path)).join(', ')}`);
   }
-  await publishPackages(packages, verifyOnly || existing?.draft === false);
+  if (manifest.schema === 4) {
+    const commit = await git('rev-parse', `${tag}^{commit}`);
+    if (commit.code !== 0 || !/^[a-f0-9]{40}$/.test(commit.out))
+      throw new Error('cannot resolve the release commit');
+    await certifyNpmPublication(
+      packages,
+      { slug, tag, sha: commit.out },
+      packet.release.digest,
+      catalog,
+      !verifyOnly && existing?.draft !== false,
+    );
+  } else {
+    // Older receipts can be rechecked without originating a publication.
+    await publishPackages(packages, true);
+  }
   if (!verifyOnly && (!existing || existing.draft)) await changeRelease(['edit', tag, '--draft=false']);
   const final = (await publishedReleases(slug)).find((release) => release.tag_name === tag);
   if (

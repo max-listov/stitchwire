@@ -301,7 +301,7 @@ try {
   // Pinned on purpose, and now permanently on the refusal question: one fleet runs one version, so
   // "do these two interoperate" has one answer for every release and the matrix asserts it rather
   // than re-deciding it. Bump both pins at release time; never loosen the guard.
-  if (candidateVersion !== '0.58.0' || rollbackVersion !== '0.57.0') {
+  if (candidateVersion !== '0.58.1' || rollbackVersion !== '0.58.0') {
     throw new Error('conformance harness received unexpected artifact versions');
   }
   await halfFinishedRollout(binaries, root);

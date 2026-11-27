@@ -1,11 +1,43 @@
 name: Publish verified npm archives
 on:
   workflow_dispatch:
-permissions:
-  contents: read
+    inputs:
+      manifest_sha256:
+        description: SHA-256 of the manifest accepted by release smoke
+        required: true
+        type: string
+permissions: {}
+concurrency:
+  group: npm-release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  publish:
+  candidate:
     if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    # GitHub requires push access to see drafts. This job runs no repository code.
+    permissions:
+      contents: write
+    steps:
+      - name: Retrieve the sealed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED: ${{ inputs.manifest_sha256 }}
+        run: |
+          [[ "$EXPECTED" =~ ^[0-9a-f]{64}$ ]]
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir release
+          echo "$EXPECTED  release/manifest.json" | sha256sum --check --strict
+      - id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sealed-release-${{ github.run_attempt }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 3
+  publish:
+    needs: candidate
     environment: npm-production
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -23,9 +55,11 @@ jobs:
         with:
           node-version: '26'
       - run: bun install --frozen-lockfile --ignore-scripts
-      - name: Download sealed release assets
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
+          path: ${{ runner.temp }}/release
+      - name: Publish the signed candidate with npm provenance
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/release"
-      - name: Publish both verified archives with provenance
+          EXPECTED_MANIFEST: ${{ inputs.manifest_sha256 }}
         run: bun scripts/npm-release.ts "$RUNNER_TEMP/release" --publish

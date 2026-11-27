@@ -4,7 +4,7 @@ description: Product-only source selection, artifact integrity and explicit auth
 type: architecture
 status: active
 created: 2026-08-30
-updated: 2026-11-27 14:13 +08:00
+updated: 2026-11-27 16:15 +08:00
 ---
 
 ## Source boundary
@@ -63,8 +63,10 @@ candidate directory holds them as `rollback/` and `release/`, each sealed by its
 
 Every source manifest declares `private: true`. The build packs `@stitchwire/client` and
 `stitchwire` into `dist/`. The publisher uploads the sealed release set to a GitHub draft,
-checks the downloaded assets, publishes the exact tarballs to npm, and verifies the bytes
-anonymous users receive before opening the GitHub Release. A release requires an approved version, a trusted
+checks the downloaded assets and dispatches the trusted GitHub workflow with the verified
+manifest digest. The workflow checks the Ed25519 signature and publishes the sealed tarballs using OIDC.
+The operator verifies anonymous archive downloads, npm signatures and the SLSA source identity
+before opening the GitHub Release. A release requires an approved version, a trusted
 publication destination, a private security reporting channel, license/provenance review and exact
 tested artifact checksums. The release pipeline must actually run its advertised OS/runtime matrix;
 configuration alone is not a passing CI receipt.
@@ -112,12 +114,12 @@ In order. Each proves something different, and the last one is the one the decis
    any gate above, and an audit run before the last edit answers about a tree that no longer
    exists.
 2. `bun scripts/create-candidate.ts` — the release set (artifact, runtime notices, manifest and
-   checksums) and the private rollback packet beside it.
+   checksums signed with the supplied Ed25519 release key) and the private rollback packet beside it.
 3. `bun run smoke -- --candidate-binary <candidate>/release/stitchwire-<version> --rollback-binary
    <candidate>/rollback/stitchwire-<previous>.rollback` (`scripts/release-smoke.ts`)
    — the mixed-version matrix. Ten scenarios across RPC, streams, events, resume, peer RTT, config
    preflight and rollback.
-4. Coordinated activation, then post-rollout observation.
+4. Install the published upgrade on an isolated broker and agent. Observe their connection, then coordinate fleet activation and check real calls after rollout.
 
 **The smoke gate needs two binaries, not one.** It runs the candidate against the *previous
 release*, so that previous artifact has to be kept, not rebuilt from a tag on the day. Without

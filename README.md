@@ -56,7 +56,7 @@ bun add -g stitchwire
 bunx stitchwire --version
 ```
 
-Or install the standalone bundle from GitHub Releases. It needs Bun already installed (https://bun.sh) and never installs it; it places `~/.local/bin/stitchwire` and, on macOS, `~/.local/native/darwin-<arch>.node`. It checks every file against the release `SHA256SUMS` before replacing anything; that is an integrity check against corrupted or truncated downloads, not authenticity, because the sums come from the same release:
+Or install the standalone bundle from GitHub Releases. It needs Bun already installed (https://bun.sh) and never installs it; it places `~/.local/bin/stitchwire` and, on macOS, `~/.local/native/darwin-<arch>.node`. The installer verifies the Ed25519 signature on `SHA256SUMS` against its embedded public key, checks the runtime and platform files, and runs the staged binary before replacing the current installation.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/max-listov/stitchwire/main/contrib/install.sh | bash

@@ -4,7 +4,7 @@ description: Supported artifacts, isolated installation checks and the boundary 
 type: architecture
 status: active
 created: 2026-08-30
-updated: 2026-11-27 14:13 +08:00
+updated: 2026-11-27 16:15 +08:00
 ---
 
 ## Artifacts
@@ -39,8 +39,8 @@ browser-safe `@stitchwire/client/contracts` subpath (depending only on `zod`, wi
 
 Run `bun install --frozen-lockfile --ignore-scripts`, then `bun run verify`.
 The same command is available through an optional manually dispatched hosted workflow, without
-deployment or publication credentials. Release certification runs directly on owned runners;
-hosted runner quota or billing is not a publication prerequisite. Record the exact source and
+deployment or publication credentials. Release certification runs directly on owned runners.
+A separate trusted workflow publishes new npm versions. Record the exact source and
 artifact hashes, executed checks and actual platforms; do not relabel unexecuted hosted jobs green.
 This runs
 all package typechecks/tests, the runtime build, standalone artifact and packed SDK gates.
@@ -60,7 +60,7 @@ independent owner attachment and detach. Its Linux `--systemd` acceptance additi
 supervision, process ownership, access refusals and fresh-install crash recovery.
 
 Candidate packing is not release publication. `scripts/create-candidate.ts --baseline
-<approved-prior-artifact> --out <new-directory>` writes one candidate directory with two sealed sets,
+<approved-prior-artifact> --signing-key <key-file> --out <new-directory>` writes one candidate directory with two sealed sets,
 each with its own `manifest.json` and `SHA256SUMS`:
 
 | Set | Holds | Leaves the machine |
@@ -85,8 +85,10 @@ Install the runtime from npm
 (`bun add -g stitchwire`, which ships `bin/stitchwire` beside `native/darwin-*.node` with zero external
 runtime dependencies), or via the standalone installer (`contrib/install.sh`, which requires Bun and never installs it, and downloads `manifest.json`, `SHA256SUMS`,
 `stitchwire-<version>` and, on macOS, its architecture sidecar into `~/.local/bin` and
-`~/.local/native`). The installer checks every file against `SHA256SUMS` from the same release:
-that proves integrity, not authenticity, because whoever controls the release controls the sums.
+`~/.local/native`). The installer authenticates `SHA256SUMS.sig` with its embedded Ed25519
+public key before using any checksum. The signed list covers the runtime, native modules and
+`manifest.json`. Mirrors serve identical signed bytes. An explicit pin to the original unsigned
+public release uses its checksum-list digest embedded in the installer.
 It downloads over https only (a `STITCHWIRE_RELEASE_BASE` of plain `http:` is accepted on loopback
 alone) and follows no redirect off https. The candidate file name is `stitchwire-<version>`, and a
 manifest that names any other file is refused before a download. The new runtime answers `--version`
@@ -154,11 +156,14 @@ in the consumer project after its imports are gone. Wire does not deploy or migr
 The [publication input contract](publication.md) defines the history-free product snapshot, which
 artifacts may enter a reviewed release packet and what must be true before the repository opens.
 Public releases never attach private rollback packets: `scripts/publish-release.ts` uploads the
-candidate's `release/` set and its `SHA256SUMS`, and the upload list has no other input.
+candidate's `release/` set, including the detached signature of its checksum manifest.
 
 The publisher uploads the sealed assets to a GitHub Release draft. It checks the names and
-versions inside both npm tarballs, publishes those files, and downloads each from the public
-registry to verify its SHA-256. It opens the GitHub Release after both downloads match.
+versions inside both npm tarballs and dispatches the tagged workflow with the approved manifest digest.
+A job with draft access transfers the candidate into an immutable Actions artifact. The publishing
+job verifies its signature, tag, manifest digest and contents, then publishes with npm OIDC.
+The operator checks the registry bytes, verifies signatures with `npm audit signatures`, and binds
+each new archive to the workflow, tag and commit in its SLSA statement before opening the release.
 A retry accepts a previously uploaded archive only when its bytes match the candidate.
 
 `scripts/publication-guard.ts` keeps every source manifest `private: true` — the root and all four

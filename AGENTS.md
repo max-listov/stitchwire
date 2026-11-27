@@ -28,9 +28,9 @@ commit messages, generated files and artifacts.
 - Existing private content is migration debt, not precedent. Private project planning defines
   its reviewed separation and complete publication-surface audit.
 - Release certification uses exact-source isolated local/owned-runner gates, packed-artifact
-  checks and release/rollback smoke. Hosted GitHub Actions is optional, never a billing-dependent
-  publication prerequisite. A failed or unavailable hosted job is not relabelled successful;
-  record the actual direct gate evidence. Do not skip tests or change payment settings.
+  checks and release/rollback smoke. Hosted certification is optional. New npm versions are
+  published only by the tagged trusted GitHub Actions release workflow, from the signed candidate.
+  Retain the draft if publication or provenance verification fails. Record the actual gate evidence.
 
 # How a change proves itself here
 

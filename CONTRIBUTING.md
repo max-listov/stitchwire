@@ -24,7 +24,8 @@ a source manifest. Every manifest in the tree — the root and all four workspac
 publishable copies into `dist/`: `bun run build:client` stages `dist/client-package/`, and
 `bun run pack:runtime` stages `dist/runtime-package/package/` from the verified standalone build and
 macOS native sidecars. The release publisher checks both tarballs against the candidate manifest,
-uploads them to npm and verifies them with an anonymous download before publishing the GitHub Release.
+passes the signed release set to the tagged GitHub Actions workflow, and verifies both anonymous
+downloads and npm provenance before opening the GitHub Release.
 
 Use typed Stitchkit primitives where their semantics match. Do not replace network credit with a
 local queue, domain identity with transport IDs, or unknown delivery with retries. Report exact

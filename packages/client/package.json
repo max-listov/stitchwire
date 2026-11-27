@@ -1,6 +1,6 @@
 {
   "name": "@stitchwire/client",
-  "version": "0.31.0",
+  "version": "0.31.1",
   "description": "Bounded typed client for the Stitchwire local Unix door; no daemon or broker credentials.",
   "private": true,
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "stitchwire",
-  "version": "0.58.0",
+  "version": "0.58.1",
   "description": "Broker-mediated typed RPC, bounded streams and volatile events between machines that cannot reach each other directly.",
   "license": "MIT",
   "author": "Max Listov",

@@ -23,7 +23,7 @@ export type ReleasePackage = { name: string; version: string; path: string; byte
 export async function releasePackages(
   release: ReturnType<typeof verifyReleaseSet>,
 ): Promise<ReleasePackage[]> {
-  if (release.manifest.schema !== 3) throw new Error('npm publication needs both sealed package archives');
+  if (release.manifest.schema < 3) throw new Error('npm publication needs both sealed package archives');
   const packages: ReleasePackage[] = [];
   for (const file of release.manifest.files) {
     if (file.role !== 'runtime-package' && file.role !== 'client') continue;
@@ -88,8 +88,18 @@ export async function publishPackages(packages: ReleasePackage[], verifyOnly: bo
   for (const [index, pkg] of packages.entries()) {
     if (present[index]) continue;
     if (verifyOnly) throw new Error(`npm lacks ${pkg.name}@${pkg.version}`);
-    const args = ['publish', pkg.path, '--access', 'public', '--registry', registry, '--ignore-scripts'];
-    if (process.env.GITHUB_ACTIONS === 'true') args.push('--provenance');
+    if (process.env.GITHUB_ACTIONS !== 'true' || !process.env.ACTIONS_ID_TOKEN_REQUEST_URL)
+      throw new Error('new npm versions must be published by the trusted release workflow');
+    const args = [
+      'publish',
+      pkg.path,
+      '--access',
+      'public',
+      '--registry',
+      registry,
+      '--ignore-scripts',
+      '--provenance',
+    ];
     if (sha256(await Bun.file(pkg.path).bytes()) !== pkg.digest)
       throw new Error(`archive changed: ${pkg.path}`);
     const result = await runBounded('npm', args, { timeoutMs: 180_000 });
@@ -112,10 +122,19 @@ if (import.meta.main) {
   if (!directory || !['--publish', '--verify-only'].includes(mode ?? ''))
     throw new Error('usage: npm-release <sealed release directory> --publish|--verify-only');
   const release = verifyReleaseSet(directory);
-  if (
-    process.env.GITHUB_ACTIONS === 'true' &&
-    process.env.GITHUB_REF !== `refs/tags/v${release.manifest.candidate.version}`
-  )
-    throw new Error('workflow tag and candidate version differ');
+  if (mode === '--publish') {
+    const ref = `refs/tags/v${release.manifest.candidate.version}`;
+    if (
+      release.manifest.schema !== 4 ||
+      release.digest !== process.env.EXPECTED_MANIFEST ||
+      process.env.GITHUB_ACTIONS !== 'true' ||
+      process.env.GITHUB_REF !== ref ||
+      process.env.GITHUB_WORKFLOW_REF !==
+        `${process.env.GITHUB_REPOSITORY}/.github/workflows/release.yml@${ref}`
+    )
+      throw new Error(
+        'npm publication requires the signed, smoke-approved manifest and its tagged release workflow',
+      );
+  }
   await publishPackages(await releasePackages(release), mode === '--verify-only');
 }

@@ -32,7 +32,7 @@ describe('contrib/install.sh standalone installer', () => {
     const second = await s.run(prefix);
     expect(second.exitCode).toBe(0);
     expect(second.stdout).toContain('unchanged');
-    expect(s.requests).toEqual(['/manifest.json', '/SHA256SUMS']);
+    expect(s.requests).toEqual(['/manifest.json', '/SHA256SUMS', '/SHA256SUMS.sig']);
   });
 
   test('a manifest written on one line is read the same: the candidate, not the client', async () => {
@@ -60,7 +60,7 @@ describe('contrib/install.sh standalone installer', () => {
       const refused = await s.run(prefix, { TMPDIR: scratch });
       expect({ file, exitCode: refused.exitCode }).toEqual({ file, exitCode: 1 });
       expect(refused.stderr).toContain('manifest.json candidate.file is not stitchwire-0.99.5');
-      expect(s.requests).toEqual(['/manifest.json', '/SHA256SUMS']);
+      expect(s.requests).toEqual(['/manifest.json', '/SHA256SUMS', '/SHA256SUMS.sig']);
       // Nothing outside the installer's own temporary directory, and that one is gone.
       expect(readdirSync(scratch)).toEqual([]);
       expect(existsSync(prefix)).toBe(false);
@@ -80,7 +80,7 @@ describe('contrib/install.sh standalone installer', () => {
       exitCode: 1,
       stderr: 'stitchwire-install: error: the release names version 0.99.6, not the requested 0.99.7',
     });
-    expect(s.requests).toEqual(['/manifest.json', '/SHA256SUMS']);
+    expect(s.requests).toEqual(['/manifest.json', '/SHA256SUMS', '/SHA256SUMS.sig']);
     expect(existsSync(prefix)).toBe(false);
     // Positive control: the same release under its own pin, with or without the leading v.
     for (const pin of ['0.99.6', 'v0.99.6']) {
@@ -171,8 +171,26 @@ describe('contrib/install.sh standalone installer', () => {
     const failed = await s.run(prefix);
     expect(failed.exitCode).toBe(1);
     expect(failed.stderr).toContain('manifest.json checksum mismatch');
-    expect(s.requests).toEqual(['/manifest.json', '/SHA256SUMS']);
+    expect(s.requests).toEqual(['/manifest.json', '/SHA256SUMS', '/SHA256SUMS.sig']);
     expect(s.installed(prefix)).toEqual(before);
+  });
+
+  test('a replaced signature or checksum list stops an upgrade before fetching executable bytes', async () => {
+    const prefix = join(s.work, 'signature-prefix');
+    s.published = release('0.99.1');
+    expect((await s.run(prefix)).exitCode).toBe(0);
+    const before = s.installed(prefix);
+    for (const file of ['/SHA256SUMS', '/SHA256SUMS.sig']) {
+      s.published = release('0.99.2');
+      const original = s.published.files[file];
+      if (!original) throw new Error(`missing fixture: ${file}`);
+      s.published.files[file] = Buffer.concat([original, Buffer.from('changed')]);
+      const refused = await s.run(prefix);
+      expect(refused.exitCode).toBe(1);
+      expect(refused.stderr).toContain('invalid release checksum signature');
+      expect(s.requests).toEqual(['/manifest.json', '/SHA256SUMS', '/SHA256SUMS.sig']);
+      expect(s.installed(prefix)).toEqual(before);
+    }
   });
 
   test('without sha256sum or shasum the installer names what is missing and downloads nothing', async () => {
